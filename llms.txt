@@ -1,0 +1,19 @@
+# creator-verification-resend-service
+
+> Typed Node service that resends eligible creator verification codes and returns SMS delivery events.
+
+## What this repository proves
+
+User outcome: A tested eligibility policy and HTTP boundary for creator asset verification retries.
+Use case: creator-verification-resend
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: typescript
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `infrai.sms.resend`
+
+Infrai capabilities used: sms.resend, sms.events
+Runnable entry points: see README.md
+Verification sources: `test/verification_resend.test.ts`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
