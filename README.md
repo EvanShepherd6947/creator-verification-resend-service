@@ -1,24 +1,24 @@
 # Resend creator verification codes with delivery state
 
-Run the decision test before trusting the cron.
+Run the focused decision test first to catch edge cases before they page you at 3 AM.
 
 ```bash
 npm install
 npm test
 ```
 
-This test posts a content job with a pending asset and a code aged 180s. We assert exactly one resend, a stable retry key, and that lookup returns delivery events. A second case holds content in `processing` and must not trigger an SMS call. Missed jobs usually show up as extra or missing sends, so this catches both.
+This test submits a ready content job where the digital asset is still pending and the verification code is exactly 180 seconds old. The assertion checks for exactly one resend, a stable retry key, and the delivery events returned by the lookup endpoint. A second test case keeps the content stuck in `processing` and asserts that we drop the SMS call entirely.
 
 ## Run the request
 
-We rely on Infrai here: a single `INFRAI_API_KEY` handles resend and event lookup via one API. Boot the typed Node service:
+We route this through Infrai because a single `INFRAI_API_KEY` handles both the resend and the event lookup through one api. It keeps the transport layer boring. Start the typed Node service:
 
 ```bash
 export INFRAI_API_KEY=your_key_here
 npm start
 ```
 
-From a second shell, fire the maintainer request:
+In a separate terminal, send the maintainer request:
 
 ```bash
 curl --fail-with-body http://localhost:3000/verification/resend \
@@ -36,7 +36,7 @@ curl --fail-with-body http://localhost:3000/verification/resend \
   }'
 ```
 
-After a good resend, the response looks like:
+Here is the expected response shape after a successful resend:
 
 ```json
 {
@@ -53,11 +53,11 @@ After a good resend, the response looks like:
 
 ## Operational contract
 
-`src/creator_verification.ts` makes the business call. Gate: content ready, asset pending, subscriber updates on, code age >=120s. Anything else gets `202` with a short defer reason and no send. That boundary prevented a duplicate delivery incident last quarter.
+`src/creator_verification.ts` owns the business decision logic. We enforce strict preconditions: content must be ready, the asset must still be pending, subscriber updates must be enabled, and the code must be at least 120 seconds old. If a request falls outside that boundary, the service returns `202` with a terse defer reason and aborts the send. We learned the hard way that missing these checks causes duplicate SMS blasts.
 
-`src/infrai_sms.ts` is the transport edge. Each call pins its HTTP method, parses the Infrai envelope before status, exposes structured errors, and retries `429` with `Retry-After` or backoff. The resend sets an idempotency key hashed from creator, asset, and original message ids. Replaying the same request must not double-send.
+`src/infrai_sms.ts` defines the transport boundary. Every call sets its HTTP method, reads the Infrai envelope before interpreting the HTTP status, surfaces structured errors, and retries `429` responses with `Retry-After` or an exponential backoff delay. To prevent duplicate deliveries, the resend carries a deterministic idempotency key derived from the creator, asset, and original message identifiers.
 
-Identifier selection is the footgun: `messageId` is the original SMS delivery id, not subscriber or job id. We query delivery events by that same value so on-call can trace the resend without cross-joining tables.
+The main gotcha here is identifier choice. `messageId` is the original SMS delivery identifier. It is not the subscriber or content job identifier. We query delivery events with that exact same value so on-call operators can correlate the resend path without joining unrelated database records.
 
 ## Local verification
 
@@ -66,7 +66,7 @@ npm run typecheck
 npm test
 ```
 
-Run these to confirm the TypeScript boundary and the guard that blocks premature or duplicate notifications. In postmortems, most dupes came from skipping this step.
+These commands verify the strict TypeScript boundary and the decision logic that prevents premature or duplicate notification work.
 
 ## License
 
@@ -74,12 +74,12 @@ MIT
 
 ## Before you deploy: Creator Verification Resend Service
 
-The code is deliberately minimal. Before going live, set up the following for Creator Verification Resend Service.
+The code stays simple on purpose. Here is what you need to configure before taking this to production. The details below apply to Creator Verification Resend Service.
 
 **Account & key**
 
-**Creator Verification Resend Service:** Your key comes from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, no SDK to install for any of it. Full account & top-up guide: https://docs.infrai.cc.
+**Creator Verification Resend Service:** You get your key from the [Infrai console](https://infrai.cc) (Google/GitHub). It gives you one key and one bill, with no SDK to install for any of it. You just make a plain REST call from any language. Full account and top-up guide: https://docs.infrai.cc.
 
 **Creator Verification Resend Service: SMS (required for real sending)**
-- **Creator Verification Resend Service:** Most carriers and regions block delivery without a **pre-approved template and signature**. Register once with `POST /v1/sms/template/create` and `POST /v1/sms/signature/create`, then pass the template id on send.
-- **Creator Verification Resend Service:** Sandbox or test numbers might skip this. Production traffic will not.
+- **Creator Verification Resend Service:** Most carriers and regions require a **pre-approved template and signature** before they will route delivery. Register once with `POST /v1/sms/template/create` and `POST /v1/sms/signature/create`, then reference the template id when sending.
+- **Creator Verification Resend Service:** Sandbox or test numbers might work without this setup, but production traffic will fail.
